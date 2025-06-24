@@ -1,0 +1,19 @@
+mod SPVP-SYS-PARAM is
+
+  inc SPVP-BASE .
+
+  *** system parameters ***
+  op sp-links : -> Links .
+  op sp-recur-size : -> Nat .
+
+  *** automatically computed parameters ***
+  vars NS NR : NodeId .
+  vars LS : Links .
+  vars L : Link .
+  op sp-nodes : -> Nodes .
+  op $compute-sp-nodes : Links -> Nodes .
+  eq $compute-sp-nodes(emptyLinks) = emptyNodes .
+  eq $compute-sp-nodes((NS => NR), LS) = NR, NS, $compute-sp-nodes(LS) .
+  eq sp-nodes = $compute-sp-nodes(sp-links) .
+
+endm

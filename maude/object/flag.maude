@@ -1,0 +1,7 @@
+mod SPVP-FLAG-OBJECT is
+
+  inc CONFIGURATION .
+
+  op diverged : -> Configuration [ctor] .
+
+endm

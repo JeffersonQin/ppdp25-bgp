@@ -1,0 +1,129 @@
+load symbol/base.maude
+load symbol/dp.maude
+load symbol/sys.maude
+
+load object/node.maude
+load object/dp.maude
+load object/flag.maude
+
+mod SPVP is
+
+  inc SPVP-BASE .
+  inc SPVP-DP .
+  inc SPVP-SYS-PARAM .
+
+  inc SPVP-NODE-OBJECT .
+  inc SPVP-DP-OBJECT .
+  inc SPVP-FLAG-OBJECT .
+
+  vars A : Oid .
+  vars C C-New A-New NodesNew SystemNew : Configuration .
+  vars ats_dpc ats_node : AttributeSet .
+  vars Rib RibNew BestChoice PC PPNew : Path .
+  vars RibIn RibInNew : LinkPathMap .
+  vars Permitted PL : PathList .
+  vars Neighbours : Nodes .
+  vars LQM : LinkQueueMap .
+  vars N NS : NodeId .
+  vars n : Nat .
+  vars LS : Links .
+  vars L : Link .
+  vars CID : Cid .
+  vars ats : AttributeSet .
+  vars Conf1 Conf2 Conf2-Nodes Conf2-DP : Configuration .
+
+  sort BGP . --- make sure whole system is rewritten at once
+  op {_} : Configuration -> BGP [ctor] .
+
+  op atomic-non-sp-links : Configuration Links -> Configuration [ctor] .
+
+  eq atomic-non-sp-links(C, emptyLinks) = C .
+  ceq atomic-non-sp-links(C < A : NodeClass | 
+      id : N, 
+      rib : Rib,
+      rib-in : RibIn,
+      permitted : Permitted,
+      neighbours : Neighbours,
+      queue : ([(NS => N) | (PC :: PL)] [q] LQM),
+      ats_node >, ((NS => N), LS)) = 
+    atomic-non-sp-links(NodesNew, LS)
+    if RibInNew := RibIn accept PC from (NS => N)
+    /\ BestChoice := best-choice(pt: Permitted, rt: RibInNew)
+    /\ RibNew := if BestChoice == nullPath or BestChoice == nilPath
+        then nullPath else N BestChoice fi 
+    /\ PPNew := if Rib == RibNew then noChange else RibNew fi
+    /\ A-New := < A : NodeClass |
+        id : N, rib : RibNew, rib-in : RibInNew, 
+        permitted : Permitted, neighbours : Neighbours,
+        queue : ([(NS => N) | PL] [q] LQM), ats_node >
+    /\ C-New := if Rib == RibNew then C else
+        broadcast RibNew from N to Neighbours in C fi
+    /\ NodesNew := A-New C-New .
+
+
+  op non-empty-non-sp-links : Configuration -> Links .
+
+  op gather-non-empty-links : LinkQueueMap -> Links .
+  eq gather-non-empty-links(emptyLQM) = emptyLinks .
+  eq gather-non-empty-links([L | PL] [q] LQM) = 
+    if (L inLS sp-links) or (PL == nilPL) then gather-non-empty-links(LQM)
+    else (L, gather-non-empty-links(LQM)) fi .
+
+
+  eq non-empty-non-sp-links(none) = emptyLinks .
+  eq non-empty-non-sp-links(C < A : NodeClass | queue : LQM, ats >) = 
+    gather-non-empty-links(LQM), non-empty-non-sp-links(C) .
+  eq non-empty-non-sp-links(C < A : CID | ats >) = non-empty-non-sp-links(C) [owise] .
+
+  crl [process-non-sp-links] : { Conf1 < DPC : DPClass | sz : n, ats_dpc > } => { Conf2 }
+  if Conf2-Nodes := atomic-non-sp-links(Conf1, non-empty-non-sp-links(Conf1))
+  /\ Conf2-DP := dpo-clear(sys-new: Conf2-Nodes < DPC : DPClass | sz : n, ats_dpc >)
+  /\ Conf2 := Conf2-Nodes Conf2-DP .
+
+  crl [process] : {
+    C < A : NodeClass | 
+      id : N, 
+      rib : Rib,
+      rib-in : RibIn,
+      permitted : Permitted,
+      neighbours : Neighbours,
+      queue : ([(NS => N) | (PC :: PL)] [q] LQM),
+      ats_node >
+    < DPC : DPClass | sz : n, ats_dpc >
+  } => {
+    if dpo-check(dpc: < DPC : DPClass | sz : n, ats_dpc >) then
+      diverged C < A : NodeClass | 
+        id : N, rib : Rib, rib-in : RibIn, 
+        permitted : Permitted, neighbours : Neighbours,
+        queue : ([(NS => N) | (PC :: PL)] [q] LQM), ats_node >
+      < DPC : DPClass | sz : n, ats_dpc >
+    else
+      NodesNew
+      if (NS => N) inLS sp-links then
+        dpo-update(
+          sys-new: SystemNew,
+          l-new: (NS => N),
+          pc-new: PC,
+          pp-new: PPNew
+        )
+      else
+        dpo-clear(sys-new: SystemNew)
+      fi
+    fi
+  }
+  if (NS => N) inLS sp-links
+  /\ RibInNew := RibIn accept PC from (NS => N)
+  /\ BestChoice := best-choice(pt: Permitted, rt: RibInNew)
+  /\ RibNew := if BestChoice == nullPath or BestChoice == nilPath
+      then nullPath else N BestChoice fi 
+  /\ PPNew := if Rib == RibNew then noChange else RibNew fi
+  /\ A-New := < A : NodeClass |
+      id : N, rib : RibNew, rib-in : RibInNew, 
+      permitted : Permitted, neighbours : Neighbours,
+      queue : ([(NS => N) | PL] [q] LQM), ats_node >
+  /\ C-New := if Rib == RibNew then C else
+      broadcast RibNew from N to Neighbours in C fi
+  /\ NodesNew := A-New C-New
+  /\ SystemNew := NodesNew < DPC : DPClass | sz : n, ats_dpc > .
+
+endm

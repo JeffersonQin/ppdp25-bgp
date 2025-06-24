@@ -1,0 +1,171 @@
+mod SPVP-DP-OBJECT is
+
+  inc CONVERSION .
+  inc CONFIGURATION .
+
+  inc SPVP-SYS-PARAM .
+  inc SPVP-DP .
+
+  inc SPVP-NODE-OBJECT .
+
+  *** DP condition bookkeeping class ***
+  op DPClass : -> Cid [ctor] .
+  op sz :_ : Nat -> Attribute [ctor] . --- size of current dp bookkeeping
+  op consume :_ : LinkPathList -> Attribute [ctor] . --- [(link, path)] (list:time)
+  op produce :_ : NodePathList -> Attribute [ctor] . --- [(node, path)] (list:time)
+  op init :_ : LinkQueueMap -> Attribute [ctor] . --- [(link, queue)] (set:map)
+  op all-rib :_ : RoutingList -> Attribute [ctor] . --- [(rt)] (list:time)
+  op all-rib-in :_ : LinkPathMapList -> Attribute [ctor] . --- [(link:path)] (list:time)
+  op DPC : -> Oid [ctor] .
+
+  vars C : Configuration .
+  vars A : Oid .
+  vars CID : Cid .
+  vars PS : PathSet .
+  vars LPT NewLPT : LinkPathTuple .
+  vars NPT NewNPT : NodePathTuple .
+  vars LQT : LinkQueueTuple .
+  vars LPL : LinkPathList .
+  vars NPL : NodePathList .
+  vars LQM : LinkQueueMap .
+  vars RTL : RoutingList .
+  vars LPM : LinkPathMap .
+  vars LPML : LinkPathMapList .
+  vars L : Link .
+  vars LS : Links .
+  vars Q : PathList .
+  vars N NS NR : NodeId .
+  vars P PC PP : Path .
+  vars ats ats1 ats2 : AttributeSet .
+  vars n : Nat .
+
+
+  *** gathering queues ***
+  op gather-queues(sys:_) : Configuration -> LinkQueueMap .
+
+  op $gather-queues-filter-links : LinkQueueMap -> LinkQueueMap .
+  eq $gather-queues-filter-links(emptyLQM) = emptyLQM .
+  eq $gather-queues-filter-links([L | Q] [q] LQM) = 
+    if L inLS sp-links then [L | Q] [q] $gather-queues-filter-links(LQM)
+    else $gather-queues-filter-links(LQM) fi .
+
+  op $gather-queues-on-node : Configuration -> LinkQueueMap .
+  eq $gather-queues-on-node(< A : NodeClass | queue : LQM, ats >) = 
+    $gather-queues-filter-links(LQM) .
+
+  op $gather-queues : Configuration -> LinkQueueMap .
+  eq $gather-queues(none) = emptyLQM .
+  eq $gather-queues(C < A : CID | ats >) =
+    if (CID == NodeClass) then
+      $gather-queues-on-node(< A : CID | ats >) [q] $gather-queues(C)
+    else $gather-queues(C) fi .
+
+  op $gather-amend-empty-queues : LinkQueueMap Links -> LinkQueueMap .
+  eq $gather-amend-empty-queues(LQM, emptyLinks) = LQM .
+  eq $gather-amend-empty-queues([L | Q] [q] LQM, (L, LS)) = 
+    [L | Q] [q] $gather-amend-empty-queues(LQM, LS) .
+  eq $gather-amend-empty-queues(LQM, (L, LS)) = 
+    [L | nilPL] [q] $gather-amend-empty-queues(LQM, LS) [owise] .
+
+  eq gather-queues(sys: C) =
+    $gather-amend-empty-queues(
+      $gather-queues(C), sp-links
+    ) .
+
+  *** gather-ribs/rib-ins ***
+  op gather-ribs(sys:_) : Configuration -> PathSet .
+  op $gather-ribs : Configuration -> PathSet .
+  eq $gather-ribs(< A : NodeClass | id : N, rib : P, ats >) =
+    if N inNS sp-nodes then P else emptyPS fi .
+  eq gather-ribs(sys: none) = emptyPS .
+  eq gather-ribs(sys: C < A : CID | ats >) =
+    if (CID == NodeClass) then
+      $gather-ribs(< A : CID | ats >) ; gather-ribs(sys: C)
+    else gather-ribs(sys: C) fi .
+
+  op gather-rib-ins(sys:_) : Configuration -> LinkPathMap .
+  op $gather-rib-ins : Configuration -> LinkPathMap .
+  eq $gather-rib-ins(< A : NodeClass | id : N, rib-in : LPM, ats >) = 
+    if N inNS sp-nodes then LPM else emptyLPM fi .
+  eq gather-rib-ins(sys: none) = emptyLPM .
+  eq gather-rib-ins(sys: C < A : CID | ats >) =
+    if (CID == NodeClass) then
+      $gather-rib-ins(< A : CID | ats >) [r] gather-rib-ins(sys: C)
+    else gather-rib-ins(sys: C) fi .
+
+  *** clear ***
+  op dpo-clear(sys-new:_) : Configuration -> Configuration .
+  eq dpo-clear(
+    sys-new: C < DPC : DPClass | 
+      consume : LPL,
+      produce : NPL,
+      init : LQM,
+      all-rib : RTL,
+      all-rib-in : LPML,
+      sz : n, ats >
+  ) =
+  < DPC : DPClass |
+    consume : nilLPL,
+    produce : nilNPL,
+    init : gather-queues(sys: C),
+    all-rib : gather-ribs(sys: C),
+    all-rib-in : gather-rib-ins(sys: C),
+    sz : 0, ats > .
+
+  *** checking ***
+  op dpo-check(dpc:_) : Configuration -> Bool .
+  eq dpo-check(dpc: < DPC : DPClass | 
+    consume : LPL, 
+    produce : NPL, 
+    init : LQM,
+    all-rib : RTL, 
+    all-rib-in : LPML,
+    sz : n, ats >) = 
+    n == sp-recur-size and
+    dp-check(q: LQM, p: NPL, c: LPL, l: sp-links) and
+    headRTL(RTL) == lastRTL(RTL) and 
+    headLMPL(LPML) == lastLMPL(LPML) .
+
+  *** updating (assume rewriting in sp-links) ***
+  op dpo-update(sys-new:_,l-new:_,pc-new:_,pp-new:_) : 
+    Configuration Link Path Path -> Configuration .
+  ceq dpo-update(
+    sys-new: C < DPC : DPClass | 
+      consume : LPL, 
+      produce : NPL, 
+      init : LQM,
+      all-rib : RTL, 
+      all-rib-in : LPML,
+      sz : n, ats >,
+    l-new: (NS => NR), pc-new: PC, pp-new: PP
+  ) = ( if (n < sp-recur-size) then
+    < DPC : DPClass | 
+    consume : (LPL [c] NewLPT), 
+    produce : (NPL [p] NewNPT), 
+    init : LQM, 
+    all-rib : (RTL ++ gather-ribs(sys: C)), 
+    all-rib-in : (LPML ++ gather-rib-ins(sys: C)), 
+    sz : s(n), ats > 
+  else
+    < DPC : DPClass | 
+    consume : (tailLPL(LPL) [c] NewLPT), 
+    produce : (tailNPL(NPL) [p] NewNPT), 
+    init : dp-update-queue(
+      q: LQM, 
+      c: headLPL(LPL), 
+      p: headNPL(NPL)
+    ),
+    all-rib : (tailRTL(RTL) ++ gather-ribs(sys: C)), 
+    all-rib-in : (tailLMPL(LPML) ++ gather-rib-ins(sys: C)), 
+    sz : n, ats > 
+  fi )
+  if NewLPT := (
+      if (NS => NR) inLS sp-links then [(NS => NR) <: PC]
+      else unrelated-LPT fi
+    ) 
+  /\ NewNPT := (
+      if NR inNS sp-nodes then [NR :> PP]
+      else unrelated-NPT fi
+    ) .
+
+endm

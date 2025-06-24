@@ -1,0 +1,258 @@
+mod SPVP-NODE is
+  inc NAT .
+  inc BOOL .
+
+  --- NodeId - id for each node in the graph.
+  sort NodeId .
+  op nid : Nat -> NodeId [ctor] .
+endm
+
+
+mod SPVP-LINK is
+  inc SPVP-NODE .
+
+  --- Link - a pair of NodeIds
+  sort Link .
+  op _=>_ : NodeId NodeId -> Link [ctor] .
+
+  vars N1 N2 : NodeId .
+
+  op sender(_) : Link -> NodeId .
+  op receiver(_) : Link -> NodeId .
+  eq sender(N1 => N2) = N1 .
+  eq receiver(N1 => N2) = N2 .
+endm
+
+
+mod SPVP-LINKS is
+  inc SPVP-LINK .
+
+  --- Links - a set of links - order does not matter
+  sort Links .
+  subsort Link < Links .
+  op emptyLinks : -> Links [ctor] .
+  op _,_ : Links Links -> Links 
+          [ctor assoc comm id: emptyLinks] .
+
+  vars L : Link .
+  vars LS : Links .
+
+  op _inLS_ : Link Links -> Bool .
+  eq L inLS (L, LS) = true .
+  eq L inLS LS = false [owise] .
+endm
+
+
+mod SPVP-PATH is
+  inc SPVP-NODE .
+
+  --- Path - a list of nodes -- order matters
+  sort Path .
+  subsort NodeId < Path .
+
+  op nilPath : -> Path [ctor] . --- empty path
+  op nullPath : -> Path [ctor] . --- non-existence
+  op noChange : -> Path [ctor] . --- no change in path
+  op __ : Path Path -> Path 
+          [ctor assoc id: nilPath] .
+endm
+
+
+mod SPVP-NODES is
+  inc SPVP-NODE .
+
+  --- Nodes - a set of nodes - order does not matter
+  sort Nodes .
+  subsort NodeId < Nodes .
+  op emptyNodes : -> Nodes [ctor] .
+  op _,_ : Nodes Nodes -> Nodes 
+          [ctor assoc comm id: emptyNodes] .
+
+  vars N : NodeId .
+  vars NS : Nodes .
+
+  op _inNS_ : NodeId Nodes -> Bool .
+  eq N inNS (N, NS) = true .
+  eq N inNS NS = false [owise] .
+endm
+
+
+mod SPVP-PATH-LIST is
+  inc SPVP-PATH .
+
+  --- PathList - a list of paths
+  --- Queue - a list of paths, older, fronter
+  --- PreferenceTable - a list of paths, higher, fronter
+  ---                   does not include the starting node
+
+  sort PathList .
+  subsort Path < PathList .
+  op nilPL : -> PathList [ctor] .
+  op _::_ : PathList PathList -> PathList 
+          [ctor assoc id: nilPL] .
+
+  vars n : Nat .
+  vars P : Path .
+  vars PL : PathList .
+
+  op $lengthPL : PathList Nat -> Nat .
+  eq $lengthPL(nilPL, n) = n .
+  eq $lengthPL(P :: PL, n) = $lengthPL(PL, n + 1) .
+
+  op lengthPL : PathList -> Nat .
+  eq lengthPL(PL) = $lengthPL(PL, 0) .
+
+  op headPL : PathList -> Path .
+  eq headPL(nilPL) = nullPath .
+  eq headPL(P :: PL) = P .
+
+  op tailPL : PathList -> PathList .
+  eq tailPL(nilPL) = nilPL .
+  eq tailPL(P :: PL) = PL .
+endm
+
+
+mod SPVP-PATH-SET is
+  inc SPVP-PATH .
+
+  --- PathSet - a set of paths - order does not matter
+  --- RoutingTable
+
+  sort PathSet .
+  subsort Path < PathSet .
+  op emptyPS : -> PathSet [ctor] .
+  op nullPS : -> PathSet [ctor] .
+  op _;_ : PathSet PathSet -> PathSet 
+          [ctor assoc comm id: emptyPS] .
+
+  vars P : Path .
+  vars PS : PathSet .
+
+  op _inPS_ : Path PathSet -> Bool .
+  eq P inPS (P ; PS) = true .
+  eq P inPS PS = false [owise] .
+endm
+
+
+mod SPVP-BOOKKEEP is
+  inc SPVP-NODE .
+  inc SPVP-PATH .
+  inc SPVP-LINK .
+  inc SPVP-PATH-LIST .
+  inc SPVP-PATH-SET .
+
+  --- Tuples
+  sort LinkPathTuple .
+  op nullLPT : -> LinkPathTuple [ctor] .
+  op unrelated-LPT : -> LinkPathTuple [ctor] .
+  op [_<:_] : Link Path -> LinkPathTuple [ctor] .
+  sort NodePathTuple .
+  op nullNPT : -> NodePathTuple [ctor] .
+  op unrelated-NPT : -> NodePathTuple [ctor] .
+  op [_:>_] : NodeId Path -> NodePathTuple [ctor] .
+  sort LinkQueueTuple .
+  op nullLQT : -> LinkQueueTuple [ctor] .
+  op [_|_] : Link PathList -> LinkQueueTuple [ctor] .
+
+  --- List
+  sort LinkPathList .
+  subsort LinkPathTuple < LinkPathList .
+  op nilLPL : -> LinkPathList [ctor] .
+  op _[c]_ : LinkPathList LinkPathList -> LinkPathList 
+          [ctor assoc id: nilLPL] .
+
+  sort NodePathList .
+  subsort NodePathTuple < NodePathList .
+  op nilNPL : -> NodePathList [ctor] .
+  op _[p]_ : NodePathList NodePathList -> NodePathList 
+          [ctor assoc id: nilNPL] .
+
+  sort LinkQueueMap .
+  subsort LinkQueueTuple < LinkQueueMap .
+  op emptyLQM : -> LinkQueueMap [ctor] .
+  op badLQM : -> LinkQueueMap [ctor] .
+  op _[q]_ : LinkQueueMap LinkQueueMap -> LinkQueueMap 
+          [ctor assoc comm id: emptyLQM] .
+
+  sort RoutingList .
+  subsort PathSet < RoutingList .
+  op nilRTL : -> RoutingList [ctor] .
+  op _++_ : RoutingList RoutingList -> RoutingList 
+          [ctor assoc id: nilRTL] .
+
+  sort LinkPathMap .
+  subsort LinkPathTuple < LinkPathMap .
+  op emptyLPM : -> LinkPathMap [ctor] .
+  op nullLPM : -> LinkPathMap [ctor] .
+  op _[r]_ : LinkPathMap LinkPathMap -> LinkPathMap 
+          [ctor assoc comm id: emptyLPM] .
+
+  sort LinkPathMapList .
+  subsort LinkPathMap < LinkPathMapList .
+  op nilLPML : -> LinkPathMapList [ctor] .
+  op _++_ : LinkPathMapList LinkPathMapList -> LinkPathMapList 
+          [ctor assoc id: nilLPML] .
+
+  vars PS : PathSet .
+  vars LPT : LinkPathTuple .
+  vars NPT : NodePathTuple .
+  vars LQT : LinkQueueTuple .
+  vars LPL : LinkPathList .
+  vars NPL : NodePathList .
+  vars LQM : LinkQueueMap .
+  vars RTL : RoutingList .
+  vars LPM : LinkPathMap .
+  vars LPML : LinkPathMapList .
+
+  op headLPL : LinkPathList -> LinkPathTuple .
+  eq headLPL(nilLPL) = nullLPT .
+  eq headLPL(LPT [c] LPL) = LPT .
+
+  op tailLPL : LinkPathList -> LinkPathList .
+  eq tailLPL(nilLPL) = nilLPL .
+  eq tailLPL(LPT [c] LPL) = LPL .
+
+  op headNPL : NodePathList -> NodePathTuple .
+  eq headNPL(nilNPL) = nullNPT .
+  eq headNPL(NPT [p] NPL) = NPT .
+
+  op tailNPL : NodePathList -> NodePathList .
+  eq tailNPL(nilNPL) = nilNPL .
+  eq tailNPL(NPT [p] NPL) = NPL .
+
+  op headRTL : RoutingList -> PathSet .
+  eq headRTL(nilRTL) = nullPS .
+  eq headRTL(PS ++ RTL) = PS .
+
+  op lastRTL : RoutingList -> PathSet .
+  eq lastRTL(nilRTL) = nullPS .
+  eq lastRTL(RTL ++ PS) = PS .
+
+  op headLMPL : LinkPathMapList -> LinkPathMap .
+  eq headLMPL(nilLPML) = nullLPM .
+  eq headLMPL(LPM ++ LPML) = LPM .
+
+  op lastLMPL : LinkPathMapList -> LinkPathMap .
+  eq lastLMPL(nilLPML) = nullLPM .
+  eq lastLMPL(LPML ++ LPM) = LPM .
+
+  op tailRTL : RoutingList -> RoutingList .
+  eq tailRTL(nilRTL) = nilRTL .
+  eq tailRTL(PS ++ RTL) = RTL .
+
+  op tailLMPL : LinkPathMapList -> LinkPathMapList .
+  eq tailLMPL(nilLPML) = nilLPML .
+  eq tailLMPL(LPM ++ LPML) = LPML .
+endm
+
+
+mod SPVP-BASE is
+  inc SPVP-NODE .
+  inc SPVP-LINK .
+  inc SPVP-LINKS .
+  inc SPVP-PATH .
+  inc SPVP-NODES .
+  inc SPVP-PATH-LIST .
+  inc SPVP-PATH-SET .
+  inc SPVP-BOOKKEEP .
+endm

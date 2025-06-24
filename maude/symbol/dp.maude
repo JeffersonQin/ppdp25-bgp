@@ -1,0 +1,93 @@
+--- divergence point
+mod SPVP-DP is
+
+  inc SPVP-BASE .
+
+  vars L L1 LC : Link .
+  vars LS : Links .
+  vars P PC PP : Path .
+  vars PL PathsP PathsC PathsQ PL1 PL2 PL3 : PathList .
+  vars N NS NR NP : NodeId .
+  vars LPL : LinkPathList .
+  vars NPL : NodePathList .
+  vars LQM : LinkQueueMap .
+
+
+
+  *** aggregation / query ***
+  op aggregate-consume(l:_,c:_) : Link LinkPathList -> PathList .
+  op aggregate-produce(l:_,p:_) : Link NodePathList -> PathList .
+  op find-queue(l:_,q:_) : Link LinkQueueMap -> PathList .
+
+  eq aggregate-consume(l: L, c: nilLPL) = nilPL .
+  eq aggregate-consume(l: L, c: unrelated-LPT [c] LPL) = 
+    aggregate-consume(l: L, c: LPL) .
+  eq aggregate-consume(l: L, c: [L1 <: P] [c] LPL) =
+    if (L == L1) then (P :: aggregate-consume(l: L, c: LPL))
+    else aggregate-consume(l: L, c: LPL) fi .
+
+  eq aggregate-produce(l: L, p: nilNPL) = nilPL .
+  eq aggregate-produce(l: L, p: unrelated-NPT [p] NPL) = 
+    aggregate-produce(l: L, p: NPL) .
+  eq aggregate-produce(l: (NS => NR), p: [N :> P] [p] NPL) =
+    if (NS == N and P =/= noChange) then (P :: aggregate-produce(l: (NS => NR), p: NPL))
+    else aggregate-produce(l: (NS => NR), p: NPL) fi .
+
+  eq find-queue(l: L, q: [L1 | PL] [q] LQM) =
+    --- should always find the answer, so no need for emptyLQM
+    if (L == L1) then PL
+    else find-queue(l: L, q: LQM) fi .
+
+  --- repetition checking ---
+  op $check-repetition : PathList PathList PathList ~> Bool [special (
+    id-hook SpecialHubSymbol
+  )] .
+  op check-repetition(q:_,p:_,c:_) : PathList PathList PathList -> Bool .
+  eq check-repetition(q: PL1, p: PL2, c: PL3) = $check-repetition(PL1, PL2, PL3) .
+
+
+
+  *** divergence point checking ***
+  op dp-check(q:_,p:_,c:_,l:_) : LinkQueueMap NodePathList LinkPathList Links -> Bool .
+  eq dp-check(q: LQM, p: NPL, c: LPL, l: emptyLinks) = true .
+  ceq dp-check(q: LQM, p: NPL, c: LPL, l: (L, LS)) =
+    check-repetition(q: PathsQ, p: PathsP, c: PathsC)
+      and dp-check(q: LQM, p: NPL, c: LPL, l: LS)
+    if PathsC := aggregate-consume(l: L, c: LPL)
+    /\ PathsP := aggregate-produce(l: L, p: NPL)
+    /\ PathsQ := find-queue(l: L, q: LQM) .
+
+
+  *** bookkeeping: update initial queues ***
+  *** (by applying the consume/produce changes) ***
+  op dp-update-queue(q:_,c:_,p:_) : 
+    LinkQueueMap LinkPathTuple NodePathTuple -> LinkQueueMap .
+  op $apply-queue-consume(q:_,l:_,p:_) :
+    LinkQueueMap Link Path -> LinkQueueMap .
+  op $apply-queue-produce(q:_,n:_,p:_) :
+    LinkQueueMap NodeId Path -> LinkQueueMap .
+
+  eq $apply-queue-consume(q: emptyLQM, l: L, p: P) = emptyLQM .
+  eq $apply-queue-consume(q: [L1 | PL] [q] LQM, l: L, p: P) =
+    if (L == L1) then 
+      (if (headPL(PL) == P) then ([L | tailPL(PL)] [q] LQM) else badLQM fi)
+    else [L1 | PL] [q] $apply-queue-consume(q: LQM, l: L, p: P) fi .
+
+  eq $apply-queue-produce(q: emptyLQM, n: N, p: P) = emptyLQM .
+  eq $apply-queue-produce(q: [(NS => NR) | PL] [q] LQM, n: N, p: P) =
+    if P == noChange then [(NS => NR) | PL] [q] LQM else
+    (if (NS == N) then [(NS => NR) | PL :: P] else [(NS => NR) | PL] fi)
+    [q] $apply-queue-produce(q: LQM, n: N, p: P) fi .
+
+  eq dp-update-queue(q: LQM, c: unrelated-LPT, p: unrelated-NPT) = LQM .  
+  eq dp-update-queue(q: LQM, c: unrelated-LPT, p: [NP :> PP]) = 
+    $apply-queue-produce(q: LQM, n: NP, p: PP) .
+  eq dp-update-queue(q: LQM, c: [LC <: PC], p: unrelated-NPT) = 
+    $apply-queue-consume(q: LQM, l: LC, p: PC) .
+  eq dp-update-queue(q: LQM, c: [LC <: PC], p: [NP :> PP]) = 
+    $apply-queue-produce(
+      q: $apply-queue-consume(q: LQM, l: LC, p: PC),
+      n: NP, p: PP
+    ) .
+
+endm

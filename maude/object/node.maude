@@ -1,0 +1,74 @@
+mod SPVP-NODE-OBJECT is
+
+  inc CONVERSION .
+  inc CONFIGURATION .
+  inc SPVP-BASE .
+
+  *** Node Class Definition ***
+  op NodeClass : -> Cid [ctor] .
+  op id :_ : NodeId -> Attribute [ctor] .
+  --- best, contain current node
+  op rib :_ : Path -> Attribute [ctor] .
+  --- best from neighbours, no current node
+  op rib-in :_ : LinkPathMap -> Attribute [ctor] .
+  --- preference, no current node
+  op permitted :_ : PathList -> Attribute [ctor] .
+  op neighbours :_ : Nodes -> Attribute [ctor] . --- neighbours
+  op queue :_ : LinkQueueMap -> Attribute [ctor] . --- [(link, queue)] (list:map)
+
+
+  vars C : Configuration .
+  vars A : Oid .
+  vars ats : AttributeSet .
+  vars P P1 : Path .
+  vars PL : PathList .
+  vars PS : PathSet .
+  vars N NS : NodeId .
+  vars L L1 : Link .
+  vars Neighbours : Nodes .
+  vars LQM : LinkQueueMap .
+  vars LPM : LinkPathMap .
+
+
+  op _accept_from_ : LinkPathMap Path Link -> LinkPathMap .
+
+  eq ([L <: P1] [r] LPM) accept P from L = 
+    if P == nullPath or P == nilPath then LPM
+    else [L <: P] [r] LPM fi .
+  eq LPM accept P from L = [L <: P] [r] LPM [owise] .
+
+
+  op best-choice(pt:_,rt:_) : PathList LinkPathMap -> Path .
+
+  op $LPM2PS : LinkPathMap -> PathSet .
+  eq $LPM2PS(emptyLPM) = emptyPS .
+  eq $LPM2PS([L <: P] [r] LPM) = 
+    if P == nullPath or P == nilPath then $LPM2PS(LPM)
+    else (P ; $LPM2PS(LPM)) fi .
+  op $best-choice(pt:_,rt:_) : PathList PathSet -> Path .
+  eq $best-choice(pt: nilPL, rt: PS) = nullPath .
+  eq $best-choice(pt: P :: PL, rt: PS) = 
+    if P inPS PS then P
+    else $best-choice(pt: PL, rt: PS) fi .
+
+  eq best-choice(pt: PL, rt: LPM) = 
+    $best-choice(pt: PL, rt: $LPM2PS(LPM)) .
+
+
+  op broadcast_from_to_in_ : Path NodeId Nodes Configuration -> Configuration .
+
+  op $append_to_for_ : Path LinkQueueMap Link -> LinkQueueMap .
+  eq $append P to emptyLQM for L = [L | P] .
+  eq $append P to [L1 | PL] [q] LQM for L =
+    if L == L1 then [L1 | PL :: P] [q] LQM
+    else [L1 | PL] [q] $append P to LQM for L
+    fi .
+
+  eq broadcast P from NS to emptyNodes in C = C .
+  eq broadcast P from NS to (N, Neighbours) in C 
+    < A : NodeClass | id : N, queue : LQM, ats > =
+    (broadcast P from NS to Neighbours in C)
+    < A : NodeClass | id : N, queue : 
+      ($append P to LQM for NS => N), ats > .
+
+endm

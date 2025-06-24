@@ -1,0 +1,6 @@
+from exp_import import *
+
+if __name__ == "__main__":
+    size = 50
+    gadgets = (size - 1) * [GOOD_GADGET] + [DISAGREE_GADGET]
+    run_rooted_experiment(*gadgets)
